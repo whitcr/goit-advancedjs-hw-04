@@ -37,6 +37,13 @@ async function handleSubmit(event) {
 
   try {
     const images = await searchImages(searchValue, page);
+    if (images.length === 0) {
+      iziToast.warning({
+        title: 'Warning',
+        message: `Sorry, there are no images matching your search query. Please try again.`,
+      });
+    }
+
     const markup = createImageMarkup(images);
 
     elements.gallery.insertAdjacentHTML('beforeend', markup);
