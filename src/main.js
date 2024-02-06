@@ -14,7 +14,9 @@ const elements = {
   guard: document.querySelector('.js-guard'),
 };
 
-let page = 1;
+const lightbox = new SimpleLightbox('.gallery a');
+
+let page;
 let searchValue;
 let totalResults;
 
@@ -22,10 +24,12 @@ elements.form.addEventListener('submit', handleSubmit);
 
 async function handleSubmit(event) {
   event.preventDefault();
+
   elements.gallery.innerHTML = '';
   totalResults = 0;
-
+  page = 1;
   searchValue = elements.input.value.trim();
+
   if (searchValue === '') {
     iziToast.warning({
       title: 'Warning',
@@ -36,19 +40,30 @@ async function handleSubmit(event) {
   }
 
   try {
-    const images = await searchImages(searchValue, page);
-    if (images.length === 0) {
+    const { hits, totalHits, total } = await searchImages(searchValue, page);
+
+    const markup = createImageMarkup(hits);
+    elements.gallery.insertAdjacentHTML('beforeend', markup);
+
+    totalResults += totalHits;
+    lightbox.refresh();
+    if (total >= totalResults) {
+      observer.observe(elements.guard);
+    }
+    if (hits.length === 0) {
       iziToast.warning({
         title: 'Warning',
         message: `Sorry, there are no images matching your search query. Please try again.`,
       });
+      return;
     }
 
-    const markup = createImageMarkup(images);
-
-    elements.gallery.insertAdjacentHTML('beforeend', markup);
-    lightbox.refresh();
+    iziToast.success({
+      title: 'Horray!',
+      message: `We found ${totalHits} images.`,
+    });
   } catch (e) {
+    console.log(e);
     iziToast.error({
       title: 'Error',
       message: 'Please, try again',
@@ -73,27 +88,8 @@ async function searchImages(value, page) {
       per_page: 40,
     },
   });
-  if (response.status !== 200) {
-    throw new Error(response.statusText);
-  }
 
-  totalResults += response.data.totalHits;
-
-  if (response.data.total > totalResults) {
-    observer.observe(elements.guard);
-    iziToast.success({
-      title: 'Horray!',
-      message: `We found ${totalResults} images.`,
-    });
-  } else {
-    observer.unobserve(selectors.guard);
-    iziToast.error({
-      title: 'Error',
-      message: `We're sorry, but you've reached the end of search results.`,
-    });
-  }
-
-  return response.data.hits;
+  return response.data;
 }
 
 function createImageMarkup(arr) {
@@ -134,36 +130,53 @@ const options = {
 const observer = new IntersectionObserver(handlerLoadMore, options);
 
 async function handlerLoadMore(entries, observer) {
-  entries.forEach(entry => {
+  for (const entry of entries) {
     if (entry.isIntersecting) {
       page += 1;
-      if (elements.gallery.textContent === '') {
-        observer.unobserve(elements.guard);
-        return;
-      }
 
-      searchImages(searchValue, page).then(data => {
-        const markup = createImageMarkup(data);
-
+      try {
+        const { hits, totalHits, total } = await searchImages(
+          searchValue,
+          page
+        );
+        const markup = createImageMarkup(hits);
         elements.gallery.insertAdjacentHTML('beforeend', markup);
+
+        totalResults += totalHits;
         lightbox.refresh();
 
-        // SMOOTH SCROLL
-        const { height: cardHeight } = document
-          .querySelector('.gallery')
-          .firstElementChild.getBoundingClientRect();
+        if (total > totalResults) {
+          observer.observe(elements.guard);
 
-        window.scrollBy({
-          top: cardHeight * 2,
-          behavior: 'smooth',
+          // SMOOTH SCROLL
+
+          const { height: cardHeight } = document
+            .querySelector('.gallery')
+            .firstElementChild.getBoundingClientRect();
+
+          window.scrollBy({
+            top: cardHeight * 2,
+            behavior: 'smooth',
+          });
+        } else {
+          observer.unobserve(elements.guard);
+          iziToast.error({
+            title: 'Error',
+            message: `We're sorry, but you've reached the end of search results.`,
+          });
+        }
+      } catch (e) {
+        console.log(e);
+        iziToast.error({
+          title: 'Error',
+          message: 'Please, try again',
         });
-      });
+      }
     }
-  });
+  }
 }
 
 // LIGHTBOX
-const lightbox = new SimpleLightbox('.gallery a');
 
 // SCROLL TO TOP
 const scrollToTop = () => {
